@@ -27,6 +27,12 @@ const sample_request = [
     }
 ]
 
+const sample_room_total = {
+    M6CE: 140,
+    M6CB: 160,
+    M6CN: 39
+};
+
 /*
 req sample input style
 [
@@ -51,37 +57,39 @@ req sample input style
 ]
 */
 
-async function scrapeUntilValid({ expedia_listing_page_url, start_date, end_date, file_name }) {
+async function scrapeUntilValid({ expedia_listing_page_url, start_date, end_date, check_in_date, check_out_date, file_name }) {
     while (true) {
-        const ret = await scrapeExpediaPage(expedia_listing_page_url, start_date, end_date, file_name);
-        if (ret.data.length !== 0 || ret.adr || ret.revpar) {
+        const ret = await scrapeExpediaPage(expedia_listing_page_url, start_date, end_date, check_in_date, check_out_date, file_name);
+        if (ret.length !== 0) {
             return ret;
         }
     }
 }
 
 // Scraping Expedia Page Interface
-async function scrapeExpedia(req) {
-    const { body } = req;
+async function scrapeExpedia(body) {
     const result = [];
     const time = new Date();
     const promises = [];
 
     for (let i = 0; i < body.length; i++) {
-        const promise = scrapeUntilValid(body[i]).then(ret => {
-            ret.timestamp = time;
-            result.push(ret);
-        });
-        promises.push(promise);
+        let ranges = getSaturdayRanges(body[0].start_date, body[0].end_date);
+        console.log(ranges);
+        for (let j = 0; j < ranges.length; j++) {
+
+            const promise = scrapeUntilValid({ expedia_listing_page_url: body[i].expedia_listing_page_url, check_in_date: ranges[j][0], check_out_date: ranges[j][1], start_date: body[0].start_date, end_date: body[i].end_date, file_name: body[i].file_name }).then(ret => {
+                result.push(ret);
+            });
+            promises.push(promise);
+        }
     }
 
     await Promise.all(promises);
-    console.log(result);
     return result;
 }
 
 // Kernel Scraping Function
-async function scrapeExpediaPage(url = '', check_in_date = '', check_out_date = '', file_name = 'M6CE') {
+async function scrapeExpediaPage(url = '', start_date = '', end_date = '', check_in_date = '', check_out_date = '', file_name = 'M6CE') {
 
     // Parse URL with check_in_date and check_out_date
     let urlObj = new URL(url);
@@ -92,15 +100,17 @@ async function scrapeExpediaPage(url = '', check_in_date = '', check_out_date = 
 
     url = urlObj.toString()
 
-    const finalResult = {
-        data: [],
-        occupancy_rate: '',
-        adr: '',
-        revpar: '',
-    }
+    // Parse Listing ID
+
+    let listing_id = '';
+    let match = url.match(/\.h(.*?)\./);
+    if (match)
+        listing_id = match[1]
+
     let options = new chrome.Options();
     options.setAcceptInsecureCerts(true);
 
+    let result = [];
     let driver = new Builder()
         .forBrowser('chrome')
         .setChromeOptions(options)
@@ -114,7 +124,7 @@ async function scrapeExpediaPage(url = '', check_in_date = '', check_out_date = 
         // Load Cheerio Module
         let $ = cheerio.load(pageSource);
 
-        let total_num_rooms = 140;
+        let total_num_rooms = sample_room_total[file_name] ? sample_room_total[file_name] : 140;
         $('div.uitk-expando-peek').each((i, element) => {
             let text = $(element).text();
             let match = text.match(/All (\d+) rooms/);
@@ -123,7 +133,6 @@ async function scrapeExpediaPage(url = '', check_in_date = '', check_out_date = 
             }
         });
 
-        let result = [];
         let total_available_rooms = 0;
         let total_price = 0;
         let quote_count = 0;
@@ -131,13 +140,15 @@ async function scrapeExpediaPage(url = '', check_in_date = '', check_out_date = 
         $('div.uitk-layout-flex.uitk-layout-flex-block-size-full-size.uitk-layout-flex-flex-direction-column.uitk-layout-flex-justify-content-space-between.uitk-card.uitk-card-roundcorner-all.uitk-card-has-border.uitk-card-has-overflow.uitk-card-has-primary-theme').each((i, outerDiv) => {
 
             let res = {
-                display_price: '',
                 strikeout_price: '',
+                display_price: '',
+                listing_id: listing_id,
                 listing_text: '',
-                num_room_available: 0,
+                expedia_listing_page_url: url,
                 check_in_date: check_in_date,
                 check_out_date: check_out_date,
-                total_num_rooms: total_num_rooms,
+                start_date: start_date,
+                end_date: end_date,
                 file_name: file_name,
             }
 
@@ -182,49 +193,97 @@ async function scrapeExpediaPage(url = '', check_in_date = '', check_out_date = 
 
             result.push(res);
         });
-
-        // Calculate math statistics data - occupancy_rate, ADR, REVPAR
-        console.log(`total_num_rooms: ${total_num_rooms}`);
-        console.log(`total_available_rooms: ${total_available_rooms}`)
-        console.log(`total_price: ${total_price}`)
-        console.log(`quote_count: ${quote_count}`)
-
-        let occupancy_rate = (total_num_rooms - total_available_rooms) / total_num_rooms * 100;
-        let ADR = total_price / quote_count;
-        let REVPAR = ADR * occupancy_rate / 100;
-        ADR = ADR.toFixed(2);
-        REVPAR = `$${REVPAR.toFixed(2)}`;
-        occupancy_rate = `${occupancy_rate.toFixed(2)}%`;
-
-        finalResult.adr = ADR;
-        finalResult.revpar = REVPAR;
-        finalResult.occupancy_rate = occupancy_rate;
-        finalResult.data = result;
     }
     catch (err) {
         console.log(err);
     } finally {
         await driver.quit();
-        return finalResult;
+        return result;
     }
+}
+
+// Parse data from xlsx file
+async function parseExcel(path) {
+    let workbook = new ExcelJS.Workbook();
+    await workbook.csv.readFile(`${path}`);
+
+    // Read the Excel file
+    let data = [];
+    let worksheet = workbook.getWorksheet(1);
+    worksheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) return; // Skip the header row
+        let rowData = {
+            expedia_listing_page_url: row.values[1],
+            start_date: row.values[2],
+            end_date: row.values[3],
+            file_name: row.values[4],
+        };
+        data.push(rowData);
+    });
+
+    return data;
 }
 
 // Export data to xlsx file
 async function save2Excel(newsData) {
+    console.log(newsData);
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet("News Headlines");
+    const worksheet = workbook.addWorksheet(newsData[0][0]['file_name']);
     worksheet.columns = [
-        { header: "Date", key: "date" },
-        { header: "Stock Name", key: "stockName" },
-        { header: "Headline Info", key: "headlineInfo" },
-        { header: "Content", key: "content" },
+        { header: "strikeout_price", key: "strikeout_price" },
+        { header: "display_price", key: "display_price" },
+        { header: "listing_id", key: "listing_id" },
+        { header: "listing_text", key: "listing_text" },
+        { header: "expedia_listing_page_url", key: "expedia_listing_page_url" },
+        { header: "check_in_date", key: "check_in_date" },
+        { header: "check_out_date", key: "check_out_date" },
+        { header: "start_date", key: "start_date" },
+        { header: "end_date", key: "end_date" },
+        { header: "file_name", key: "file_name" },
     ];
 
     newsData.forEach((news) => {
-        worksheet.addRow(news);
+        news.forEach((item) => {
+            worksheet.addRow(item);
+        })
     });
 
-    await workbook.xlsx.writeFile("FinvizNewsHeadlines.xlsx");
+    await workbook.xlsx.writeFile(`./output_file/${newsData[0][0]['file_name']}.csv`);
 }
 
-module.exports = { save2Excel, scrapeExpedia };
+// Extract Date List from Saturday to Saturday
+function getSaturdayRanges(startDate, endDate) {
+    console.log(startDate);
+    console.log(endDate);
+    let start = new Date(startDate);
+    let end = new Date(endDate);
+    let ranges = [];
+
+    // Find the next Saturday after the start date
+    while (start.getDay() !== 6) {
+        start.setDate(start.getDate() + 1);
+    }
+
+    // Loop until the end date
+    while (start <= end) {
+        let rangeStart = new Date(start);
+
+        // Find the next Saturday
+        start.setDate(start.getDate() + 7);
+
+        // If the next Saturday is after the end date, use the end date instead
+        let rangeEnd = start <= end ? new Date(start) : end;
+
+        // Push the range to the array
+        ranges.push([
+            rangeStart.toISOString().split('T')[0],
+            rangeEnd.toISOString().split('T')[0]
+        ]);
+    }
+
+    return ranges;
+}
+
+
+
+module.exports = { save2Excel, scrapeExpedia, parseExcel };
