@@ -67,11 +67,11 @@ async function scrapeUntilValid({ expedia_listing_page_url, start_date, end_date
 }
 
 // Scraping Expedia Page Interface
-async function scrapeExpedia(body) {
+async function scrapeExpedia(req) {
     const result = [];
     const time = new Date();
     const promises = [];
-
+    const body = req.body;
     for (let i = 0; i < body.length; i++) {
         let ranges = getSaturdayRanges(body[0].start_date, body[0].end_date);
         console.log(ranges);
@@ -123,15 +123,6 @@ async function scrapeExpediaPage(url = '', start_date = '', end_date = '', check
 
         // Load Cheerio Module
         let $ = cheerio.load(pageSource);
-
-        let total_num_rooms = sample_room_total[file_name] ? sample_room_total[file_name] : 140;
-        $('div.uitk-expando-peek').each((i, element) => {
-            let text = $(element).text();
-            let match = text.match(/All (\d+) rooms/);
-            if (match) {
-                total_num_rooms = match[1];
-            }
-        });
 
         let total_available_rooms = 0;
         let total_price = 0;
