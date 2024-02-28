@@ -35,5 +35,3 @@ async function main() {
   // let result = await expediaService.scrapeExpedia(body);
   // await expediaService.save2Excel(result);
 }
-
-main();
