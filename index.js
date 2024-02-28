@@ -21,7 +21,7 @@ async function main() {
 
   console.log("--------Request Sent-------");
   const response = await axios.post(
-    "http://3.88.135.24:3128/api/v1/expedia/result",
+    "http://52.23.160.89:3128/api/v1/expedia/result",
     body
   );
 

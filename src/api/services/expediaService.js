@@ -248,33 +248,46 @@ async function parseExcel(path) {
 
 // Export data to xlsx file
 async function save2Excel(newsData) {
-  console.log(newsData);
+  let workbook = new ExcelJS.Workbook();
+  let worksheet;
+  let currentFileName = '';
   const columns = [
-    { header: "strikeout_price", key: "strikeout_price" },
-    { header: "display_price", key: "display_price" },
-    { header: "listing_id", key: "listing_id" },
-    { header: "listing_text", key: "listing_text" },
-    { header: "expedia_listing_page_url", key: "expedia_listing_page_url" },
-    { header: "check_in_date", key: "check_in_date" },
-    { header: "check_out_date", key: "check_out_date" },
-    { header: "start_date", key: "start_date" },
-    { header: "end_date", key: "end_date" },
-    { header: "file_name", key: "file_name" },
+      { header: "strikeout_price", key: "strikeout_price" },
+      { header: "display_price", key: "display_price" },
+      { header: "listing_id", key: "listing_id" },
+      { header: "listing_text", key: "listing_text" },
+      { header: "expedia_listing_page_url", key: "expedia_listing_page_url" },
+      { header: "check_in_date", key: "check_in_date" },
+      { header: "check_out_date", key: "check_out_date" },
+      { header: "start_date", key: "start_date" },
+      { header: "end_date", key: "end_date" },
+      { header: "file_name", key: "file_name" },
   ];
-
-  newsData.forEach(async (news, index) => {
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet(newsData[index][0]["file_name"]);
-    worksheet.columns = columns;
-    news.forEach((item) => {
-      worksheet.addRow(item);
-    });
-
-    await workbook.xlsx.writeFile(
-      `./output_file/${newsData[index][0]["file_name"]}.csv`
-    );
+  newsData.forEach((news, index) => {
+      const fileName = news[0]['file_name'];
+      if (currentFileName !== fileName) {
+          // If the file name has changed, write the current workbook to a file
+          // and create a new workbook and worksheet.
+          if (worksheet && currentFileName) {
+              // Save the previous workbook if it exists
+              workbook.xlsx.writeFile(`./output_file/${currentFileName}.csv`);
+          }
+          currentFileName = fileName; // Update the current file name
+          workbook = new ExcelJS.Workbook(); // Create a new workbook
+          worksheet = workbook.addWorksheet(fileName); // Create a new worksheet
+          worksheet.columns = columns; // Set the columns for the new worksheet
+      }
+      news.forEach((item) => {
+          worksheet.addRow(item);
+      });
   });
+
+  // After the loop, save the last workbook
+  if (worksheet) {
+      await workbook.xlsx.writeFile(`./output_file/${currentFileName}.csv`);
+  }
 }
+
 
 // Extract Date List from Friday to Friday
 function getFridayRanges(startDate, endDate) {
