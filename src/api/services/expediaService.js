@@ -271,6 +271,16 @@ async function scrapeExpediaPage(url = '', start_date = '', end_date = '', check
                     console.log('Could not find strikeoutPrice element');
                 }
 
+                // Extract Cancellation Policy
+                let l5_element = $(outerDiv).find('uitk-radio-button-label-suffix');
+                if (l5_element.length > 1) {
+                    let l5_text = l5_element[2].text();
+                    let addition_price = parseFloat(l5_text.replace(/[^0-9.-]+/g,""));
+                    res.display_price = Number(res.display_price) + Number(addition_price);
+                } else {
+                    console.log('Could not find strikeoutPrice element');
+                }
+
                 result.push(res);
             });
         }
